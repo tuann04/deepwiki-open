@@ -1,3 +1,4 @@
+import os
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
@@ -189,7 +190,29 @@ class OpenAIChatStreamer(_OpenAICompatStreamer):
     def _build_client(self):
         from api.clients import OpenAIClient
 
+        base_url = os.environ.get("OPENAI_BASE_URL")
+        if base_url:
+            return OpenAIClient(api_key=OPENAI_API_KEY or None, base_url=base_url)
         return OpenAIClient()
+
+    async def respond_stream(self, prompt: str) -> AsyncIterator[str]:
+        if self.client.async_client is None:
+            self.client.async_client = self.client.init_async_client()
+
+        response: "AsyncStream[ChatCompletionChunk]" = (
+            await self.client.async_client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                **self.model_kwargs,
+            )
+        )
+
+        async for chunk in response:
+            if (
+                chunk.choices
+                and chunk.choices[0].delta is not None
+                and chunk.choices[0].delta.content is not None
+            ):
+                yield chunk.choices[0].delta.content
 
 
 class AzureChatStreamer(_OpenAICompatStreamer):
